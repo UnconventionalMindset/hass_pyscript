@@ -1,0 +1,21 @@
+allow_all_imports: true
+hass_is_global: true
+apps:
+  pyscript_autocomplete:
+  motion_activated_lights:
+    - motion_sensor: binary_sensor.hueentrancesensor_occupancy
+      light: light.entrancelight
+      timer: timer.entrance_timer
+      hold_light_on_conditions:
+        - entity: binary_sensor.builtinwardrobedoor_contact
+          expected_state: 'on'
+        - entity: binary_sensor.frontdoor_contact
+          expected_state: 'on'
+    - motion_sensor: binary_sensor.huecorridorsensor_occupancy
+      light: light.corridorlight
+      timer: timer.corridor_timer
+      hold_light_on_conditions:
+        - entity: binary_sensor.builtinwardrobedoor_contact
+          expected_state: 'on'
+        - entity: binary_sensor.frontdoor_contact
+          expected_state: 'on'

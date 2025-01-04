@@ -1,0 +1,9 @@
+{
+    "python.defaultInterpreterPath": "/config/python-venv/bin/python3",
+    "python.autoComplete.extraPaths": [
+        "./modules"
+    ],
+    "python.analysis.extraPaths": [
+        "./modules"
+    ]
+}
