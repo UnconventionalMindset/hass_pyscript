@@ -65,7 +65,7 @@ def timer_stopped(timer, light):
     new_brightness = dim(old_brightness)
 
     if (old_brightness <= 0 or new_brightness <= 0):
-        # No timer needed anymore if light is off
+        # No timer needed anymore if light is off or area is too bright
         set_brightness(light, 0)
         log.info(f"Light {light} is now fully off")
         return
@@ -74,9 +74,14 @@ def timer_stopped(timer, light):
     log.info(f"Dimmed {light} from {old_brightness} to {new_brightness} due to movement absence")
     keep_dimming(timer)
 
-def motion_detected(timer, light):
+def motion_detected(timer, light, illuminance):
     # Turn the lights on and reset any timer
     pause_timer(timer)
+
+    if (int(state.get(illuminance)) > 30):
+        log.info(f"Motion trigger for {light} ignored since ambient light it's good enough")
+        return
+
     set_brightness(light, "255")
     log.info(f"Turned on {light} due to sensor movement")
 

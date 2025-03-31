@@ -21,6 +21,7 @@ def make_motion_light(config):
     motion_sensor = config['motion_sensor']
     light = config['light']
     timer = config['timer']
+    illuminance = config['illuminance']
     hold_light_on_conditions = config['hold_light_on_conditions']
 
     @state_trigger(f"{timer}")
@@ -43,7 +44,7 @@ def make_motion_light(config):
         
         task.unique(f"motion_light_motion_detected_{motion_sensor}")
         log.info(f"Motion from {motion_sensor} detected, starting unique task...")
-        motion_detected(timer, light)
+        motion_detected(timer, light, illuminance)
 
     @state_trigger(f"{motion_sensor} == 'off'")
     def motion_light_motion_absent():

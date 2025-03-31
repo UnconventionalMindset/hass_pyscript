@@ -6,6 +6,7 @@ apps:
     - motion_sensor: binary_sensor.hueentrancesensor_occupancy
       light: light.entrancelight
       timer: timer.entrance_timer
+      illuminance: sensor.hueentrancesensor_illuminance
       hold_light_on_conditions:
         - entity: binary_sensor.builtinwardrobedoor_contact
           expected_state: 'on'
@@ -14,6 +15,7 @@ apps:
     - motion_sensor: binary_sensor.huecorridorsensor_occupancy
       light: light.corridorlight
       timer: timer.corridor_timer
+      illuminance: sensor.huecorridorsensor_illuminance
       hold_light_on_conditions:
         - entity: binary_sensor.builtinwardrobedoor_contact
           expected_state: 'on'
