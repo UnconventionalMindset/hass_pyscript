@@ -78,7 +78,7 @@ def motion_detected(timer, light, illuminance):
     # Turn the lights on and reset any timer
     pause_timer(timer)
 
-    if (int(state.get(illuminance)) > 30):
+    if (int(state.get(illuminance)) > 25):
         log.info(f"Motion trigger for {light} ignored since ambient light it's good enough")
         return
 
