@@ -42,6 +42,7 @@ The `config.yaml` defines:
 
 ### Key Patterns
 - Motion detection apps use timer-based dimming with configurable delays
+- Time-aware functionality with nighttime mode (midnight-6am) using zero initial delay
 - Sensor modules provide reusable functions for brightness control and timing
 - Entity IDs are configured in `config.yaml` and passed to app functions
 - Illuminance sensors prevent unnecessary light activation during bright conditions

@@ -84,6 +84,7 @@ Core functions for lighting automation:
 
 * **Brightness Control** - `set_brightness()`, `dim()`
 * **Timer Management** - `set_timer()`, `pause_timer()`, `increase_delay()`
+* **Time-Based Logic** - `get_initial_delay()` (nighttime awareness)
 * **Motion Handling** - `motion_detected()`, `motion_absent()`
 * **Dimming Logic** - `keep_dimming()`, `timer_stopped()`
 
@@ -128,10 +129,12 @@ Modify timing constants in `modules/sensor/sensor.py`:
 
 [source,python]
 ----
-brightness_step_down = 50    # Brightness reduction per step
-dimming_delay_time = 15      # Seconds between dimming steps
-initial_delay = 25           # Initial timer duration
-max_delay = 120             # Maximum timer extension
+brightness_step_down = 50          # Brightness reduction per step
+dimming_delay_time = 15            # Seconds between dimming steps (daytime)
+nighttime_dimming_delay = 0        # Seconds between dimming steps (midnight-6am)
+initial_delay = 25                 # Initial timer duration (daytime)
+nighttime_initial_delay = 0        # Initial timer duration (midnight-6am)
+max_delay = 120                    # Maximum timer extension
 ----
 
 === Development Workflow
@@ -179,12 +182,15 @@ hold_light_on_conditions:
 
 === Adaptive Timing
 
-The timer system intelligently adjusts delays based on activity:
+The timer system intelligently adjusts delays based on activity and time of day:
 
-* **Initial Motion** → Standard delay (25 seconds)
+* **Initial Motion (Day)** → Standard delay (25 seconds)
+* **Initial Motion (Night)** → No delay (0 seconds, midnight-6am)
 * **Continued Activity** → Progressively longer delays
 * **Maximum Threshold** → Caps at 120 seconds
 * **Paused State** → Maintains current countdown
+
+TIP: The nighttime mode (midnight to 6am) uses zero initial delay for immediate dimming, providing quieter operation during sleep hours.
 
 === Ambient Light Integration
 
