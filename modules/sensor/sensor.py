@@ -7,18 +7,25 @@ gradual dimming, and nighttime awareness.
 from datetime import datetime
 
 # Configuration constants
-BRIGHTNESS_STEP_DOWN = 50
-DAYTIME_DIMMING_DELAY = 15
-NIGHTTIME_DIMMING_DELAY = 0  # Immediate dimming between midnight and 6am
-INCREASE_DELAY_AMOUNT = 5
-DAYTIME_INITIAL_DELAY = 25
-NIGHTTIME_INITIAL_DELAY = 0  # No delay between midnight and 6am
-MAX_DELAY = 120
-NIGHTTIME_START_HOUR = 0
-NIGHTTIME_END_HOUR = 6
-ILLUMINANCE_THRESHOLD = 25
-MAX_BRIGHTNESS = 255
-MID_BRIGHTNESS = 50
+CONFIG = {
+    'daytime': {
+        'initial_delay': 25,
+        'dimming_delay': 15,
+        'brightness_levels': [255, 50, 0],  # Full -> Mid -> Off
+    },
+    'nighttime': {
+        'initial_delay': 0,
+        'dimming_delay': 0,
+        'brightness_levels': [170, 1, 0],   # Medium -> Min -> Off
+        'min_brightness_delay': 6
+    },
+    'general': {
+        'increase_delay_amount': 5,
+        'max_delay': 120,
+        'nighttime_hours': (0, 6),
+        'illuminance_threshold': 25
+    }
+}
 
 def get_timer_remaining_seconds(timer_entity):
     """Get remaining seconds from a timer entity.
@@ -82,30 +89,27 @@ def start_timer(timer_entity, duration_seconds):
     timer.start(entity_id=timer_entity, duration=duration_str)
     log.debug(f"Started timer {timer_entity} for {duration_str}")
 
-def is_nighttime():
-    """Check if current time is within nighttime hours.
+def get_time_mode():
+    """Get current time mode configuration.
     
     Returns:
-        bool: True if between midnight and 6am
+        str: 'nighttime' or 'daytime'
     """
     current_hour = datetime.now().hour
-    return NIGHTTIME_START_HOUR <= current_hour < NIGHTTIME_END_HOUR
+    start, end = CONFIG['general']['nighttime_hours']
+    return 'nighttime' if start <= current_hour < end else 'daytime'
 
-def get_initial_delay():
-    """Get the appropriate initial delay based on current time.
+def get_config(key):
+    """Get configuration value for current time mode.
     
+    Args:
+        key: Configuration key
+        
     Returns:
-        int: Initial delay in seconds
+        Configuration value for current time mode
     """
-    return NIGHTTIME_INITIAL_DELAY if is_nighttime() else DAYTIME_INITIAL_DELAY
-
-def get_dimming_delay():
-    """Get the appropriate dimming delay based on current time.
-    
-    Returns:
-        int: Dimming delay in seconds
-    """
-    return NIGHTTIME_DIMMING_DELAY if is_nighttime() else DAYTIME_DIMMING_DELAY
+    mode = get_time_mode()
+    return CONFIG[mode].get(key, CONFIG['general'].get(key))
 
 def calculate_increased_delay(current_delay):
     """Calculate increased delay with maximum threshold.
@@ -116,8 +120,8 @@ def calculate_increased_delay(current_delay):
     Returns:
         int: New delay value, capped at maximum
     """
-    increased_delay = current_delay + INCREASE_DELAY_AMOUNT
-    return min(increased_delay, MAX_DELAY)
+    increased_delay = current_delay + CONFIG['general']['increase_delay_amount']
+    return min(increased_delay, CONFIG['general']['max_delay'])
 
 def pause_and_extend_timer(timer_entity):
     """Pause timer and extend duration based on activity.
@@ -126,10 +130,10 @@ def pause_and_extend_timer(timer_entity):
         timer_entity: Timer entity ID
     """
     current_delay = get_timer_remaining_seconds(timer_entity)
-    time_based_initial_delay = get_initial_delay()
+    initial_delay = get_config('initial_delay')
     
     # Use higher of current delay or initial delay, then increase
-    base_delay = max(time_based_initial_delay, current_delay)
+    base_delay = max(initial_delay, current_delay)
     new_delay = calculate_increased_delay(base_delay)
     new_duration = format_duration(new_delay)
     
@@ -137,22 +141,27 @@ def pause_and_extend_timer(timer_entity):
     timer.pause(entity_id=timer_entity)
     state.set(timer_entity, duration=new_duration, remaining=new_duration)
     
-    mode = "nighttime" if is_nighttime() else "daytime"
+    mode = get_time_mode()
     log.info(f"Extended timer {timer_entity} from {current_delay}s to {new_delay}s ({mode} mode)")
 
-def calculate_dimmed_brightness(current_brightness):
-    """Calculate next dimming step for brightness.
+def get_next_brightness_level(current_brightness):
+    """Get next brightness level in the dimming sequence.
     
     Args:
         current_brightness: Current brightness level
         
     Returns:
-        int: New brightness level (0-255)
+        int: Next brightness level in sequence
     """
-    if current_brightness > MID_BRIGHTNESS:
-        return MID_BRIGHTNESS
+    brightness_levels = get_config('brightness_levels')
     
-    return max(0, current_brightness - BRIGHTNESS_STEP_DOWN)
+    # Find the next lower brightness level
+    for i, level in enumerate(brightness_levels):
+        if current_brightness > level:
+            return level
+    
+    # If we're at or below the lowest level, turn off
+    return 0
 
 def schedule_next_dimming(timer_entity):
     """Schedule the next dimming cycle.
@@ -166,11 +175,10 @@ def schedule_next_dimming(timer_entity):
         return
         
     timer_seconds_left = get_timer_remaining_seconds(timer_entity)
-    nighttime_mode = is_nighttime()
+    mode = get_time_mode()
     
     if timer_state.state == "active" or timer_seconds_left == 0:
-        delay = get_dimming_delay()
-        mode = "nighttime" if nighttime_mode else "daytime"
+        delay = get_config('dimming_delay') or 1  # Use 1 second minimum
         log.info(f"Using {mode} dimming delay: {delay} seconds")
     else:
         delay = timer_seconds_left
@@ -191,16 +199,27 @@ def handle_timer_finished(timer_entity, light_entity):
         return
         
     current_brightness = int(light_state.attributes.get("brightness") or 0)
-    new_brightness = calculate_dimmed_brightness(current_brightness)
-
-    if current_brightness <= 0 or new_brightness <= 0:
+    next_brightness = get_next_brightness_level(current_brightness)
+    mode = get_time_mode()
+    
+    log.debug(f"{mode.title()}: current={current_brightness}, next={next_brightness}")
+    
+    if next_brightness <= 0:
         set_light_brightness(light_entity, 0)
-        log.info(f"Light {light_entity} turned off (final dimming step)")
+        log.info(f"{mode.title()}: turned off {light_entity}")
         return
-
-    set_light_brightness(light_entity, new_brightness)
-    log.info(f"Dimmed {light_entity}: {current_brightness} → {new_brightness}")
-    schedule_next_dimming(timer_entity)
+    
+    set_light_brightness(light_entity, next_brightness)
+    log.info(f"{mode.title()}: dimmed {light_entity}: {current_brightness} → {next_brightness}")
+    
+    # Schedule next step with appropriate delay
+    if mode == 'nighttime' and next_brightness == 1:
+        # Special case: nighttime minimum brightness delay
+        delay = get_config('min_brightness_delay')
+        log.info(f"Nighttime: waiting {delay}s at minimum brightness before turning off")
+        start_timer(timer_entity, delay)
+    else:
+        schedule_next_dimming(timer_entity)
 
 def handle_motion_detected(timer_entity, light_entity, illuminance_entity):
     """Handle motion detection event.
@@ -213,12 +232,21 @@ def handle_motion_detected(timer_entity, light_entity, illuminance_entity):
     pause_and_extend_timer(timer_entity)
 
     # Check ambient light level
-    current_illuminance = int(state.get(illuminance_entity) or 0)
-    if current_illuminance > ILLUMINANCE_THRESHOLD:
+    illuminance_value = state.get(illuminance_entity)
+    try:
+        current_illuminance = int(illuminance_value) if illuminance_value not in [None, 'unknown', 'unavailable'] else 0
+    except (ValueError, TypeError):
+        current_illuminance = 0
+        log.warning(f"Invalid illuminance value '{illuminance_value}' for {illuminance_entity}, using 0")
+    
+    threshold = CONFIG['general']['illuminance_threshold']
+    if current_illuminance > threshold:
         log.info(f"Motion ignored for {light_entity} - sufficient ambient light ({current_illuminance} lux)")
         return
 
-    set_light_brightness(light_entity, MAX_BRIGHTNESS)
+    # Turn on at maximum brightness (first level in sequence)
+    max_brightness = get_config('brightness_levels')[0]
+    set_light_brightness(light_entity, max_brightness)
     log.info(f"Motion detected: turned on {light_entity}")
 
 def handle_motion_cleared(timer_entity):
@@ -227,4 +255,28 @@ def handle_motion_cleared(timer_entity):
     Args:
         timer_entity: Timer entity ID
     """
-    schedule_next_dimming(timer_entity)
+    mode = get_time_mode()
+    initial_delay = get_config('initial_delay')
+    
+    if initial_delay == 0:
+        # Immediate dimming (typically nighttime)
+        start_timer(timer_entity, 1)  # Use 1 second minimum
+        log.info(f"{mode.title()} motion cleared: immediate dimming for {timer_entity}")
+    else:
+        # Standard delay behavior
+        start_timer(timer_entity, initial_delay)
+        log.info(f"{mode.title()} motion cleared: {initial_delay}s delay for {timer_entity}")
+
+
+# Backward compatibility aliases for existing apps  
+def motion_detected(timer, light, illuminance):
+    """Backward compatibility wrapper for handle_motion_detected."""
+    handle_motion_detected(timer, light, illuminance)
+
+def motion_absent(timer):
+    """Backward compatibility wrapper for handle_motion_cleared."""
+    handle_motion_cleared(timer)
+
+def timer_stopped(timer, light):
+    """Backward compatibility wrapper for handle_timer_finished."""
+    handle_timer_finished(timer, light)
