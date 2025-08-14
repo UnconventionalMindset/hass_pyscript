@@ -5,7 +5,7 @@ import sys, os
 if "/config/pyscript/modules" not in sys.path:
     sys.path.append("/config/pyscript/modules")
 
-from sensor import *
+from light_controls import *
 
 corridorlight = 'light.corridorlight'
 entrancelight = 'light.entrancelight'

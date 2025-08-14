@@ -5,7 +5,7 @@ import sys, os
 if "/config/pyscript/modules" not in sys.path:
     sys.path.append("/config/pyscript/modules")
 
-from sensor import *
+from light_controls import *
 
 def hold_light_on(conditions):
     for hold_light_on_condition in conditions:
