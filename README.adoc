@@ -8,250 +8,195 @@
 :experimental:
 
 [.lead]
-A sophisticated Home Assistant pyscript configuration for intelligent motion-activated lighting automation with advanced dimming, timing controls, and environmental awareness.
+Intelligent motion-activated lighting automation with time-aware behavior, gradual dimming, and environmental awareness for Home Assistant.
 
 == Overview
 
-This repository contains a comprehensive pyscript setup that enables advanced Python-based automation within Home Assistant. The configuration focuses on intelligent lighting control with motion detection, featuring gradual dimming, configurable delays, and ambient light sensing.
+This pyscript configuration provides sophisticated lighting automation that adapts to time of day, ambient light conditions, and occupancy patterns. The system uses motion sensors to trigger intelligent lighting sequences with configurable hold conditions and gradual dimming.
 
 === Key Features
 
-* 🏠 **Motion-Activated Lighting** - Automatic light control based on occupancy detection
-* 💡 **Intelligent Dimming** - Gradual brightness reduction with configurable timing
-* 🌅 **Ambient Light Awareness** - Prevents unnecessary activation during bright conditions  
-* ⏰ **Adaptive Timers** - Dynamic delay adjustment based on activity patterns
-* 🚪 **Conditional Hold** - Light persistence based on door states and other conditions
-* 🧪 **Interactive Development** - Jupyter notebook support for testing and experimentation
+* 🌅 **Time-Aware Automation** - Different behavior for day vs night (midnight-6am)
+* 💡 **Progressive Dimming** - Multi-stage brightness reduction with configurable timing
+* 🚪 **Conditional Hold** - Keep lights on based on door states or other conditions
+* 🔆 **Ambient Light Awareness** - Skip activation when sufficient natural light exists
+* ⏰ **Adaptive Timers** - Dynamic delay adjustment based on continued activity
+* 🧪 **Development Tools** - Jupyter notebooks and IDE support for testing
+
+== How the Lighting System Works
+
+=== Daytime Behavior (6am - Midnight)
+
+**Example: Motion detected in entrance at 2pm**
+
+1. **Motion Detected** → Light turns on at maximum brightness (255)
+2. **Ambient Light Check** → If illuminance > 25 lux, ignore motion and exit
+3. **Initial Timer** → Starts 25-second countdown
+4. **Continued Motion** → Timer extends: 25s → 30s → 35s → ... (max 120s)
+5. **Timer Expires** → Begin dimming sequence:
+   - 255 → 50 (wait 15s)
+   - 50 → 0 (turn off)
+
+**Branch: Hold Condition Active**
+If door sensor shows 'on' state:
+- Motion detection logs "Light being kept on"
+- No timer starts, light stays at current brightness
+- System waits for hold condition to clear
+
+=== Nighttime Behavior (Midnight - 6am)
+
+**Example: Motion detected in corridor at 3am**
+
+1. **Motion Detected** → Light turns on at medium brightness (170)
+2. **Ambient Light Check** → If illuminance > 25 lux, ignore motion and exit
+3. **No Initial Delay** → Timer starts immediately (0-second delay for quiet operation)
+4. **Continued Motion** → Extends timer but starts from higher base
+5. **Timer Expires** → Begin nighttime dimming:
+   - 170 → 1 (wait 0s - immediate)
+   - 1 → 0 (wait 6s at minimum brightness before turning off)
+
+**Deviation: Minimum Brightness Pause**
+The system holds at brightness=1 for 6 seconds before final turn-off, allowing eyes to adjust.
+
+=== Complex Scenario: Continuous Activity
+
+**Example: Cooking in kitchen (evening)**
+
+1. **7pm: Initial motion** → Light: 255, Timer: 25s
+2. **7pm+20s: More motion** → Timer extends to 30s  
+3. **7pm+40s: More motion** → Timer extends to 35s
+4. **7pm+60s: More motion** → Timer extends to 40s
+5. **...continues until max 120s**
+6. **Timer finally expires** → Dimming: 255 → 50 → 0
+
+== Configuration
+
+=== Main Configuration
+
+See link:config.yaml[config.yaml] for the complete configuration structure.
+
+Key settings:
+```yaml
+apps:
+  motion_activated_lights:
+    - motion_sensor: binary_sensor.hueentrancesensor_occupancy
+      light: light.entrancelight  
+      timer: timer.entrance_timer
+      illuminance: sensor.hueentrancesensor_illuminance
+      hold_light_on_conditions:
+        - entity: binary_sensor.frontdoor_contact
+          expected_state: 'on'
+```
+
+=== Timing Configuration
+
+The timing behavior is defined in link:modules/light_controls/light_controls.py[modules/light_controls/light_controls.py]:
+
+```python
+CONFIG = {
+    'daytime': {
+        'initial_delay': 25,        # Seconds before dimming starts
+        'dimming_delay': 15,        # Seconds between dimming steps
+        'brightness_levels': [255, 50, 0],  # Brightness sequence
+    },
+    'nighttime': {
+        'initial_delay': 0,         # Immediate dimming for quiet operation
+        'dimming_delay': 0,         # Instant transitions
+        'brightness_levels': [170, 1, 0],   # Lower brightness sequence
+        'min_brightness_delay': 6   # Pause at minimum before off
+    }
+}
+```
 
 == Architecture
 
 === Directory Structure
 
-[source]
-----
+Based on current structure:
+```
 pyscript/
-├── config.yaml              # Main configuration file
-├── importer.py              # Module path setup and imports
-├── apps/                    # Application modules
-│   ├── motion_activated_lights/
-│   │   ├── __init__.py
-│   │   └── motion_activated_lights.py
-│   └── pyscript_autocomplete/
-│       ├── __init__.py
-│       ├── mock_init.tpl
-│       └── pyscript_builtins.py
-└── modules/                 # Shared utilities and development tools
-    ├── sensor/
-    │   ├── __init__.py
-    │   └── sensor.py        # Core sensor utilities
-    ├── pyscript_mock/       # IDE support and type hints
-    │   ├── __init__.py
-    │   ├── pyscript_builtins.py
-    │   └── pyscript_generated.py
-    ├── test/                # Testing utilities
-    │   ├── __init__.py
-    │   └── test.py
-    ├── hass.ipynb          # Interactive Home Assistant notebook
-    ├── pyscript_tutorial.ipynb
-    └── test.ipynb
-----
+├── config.yaml                 # Main configuration
+├── importer.py                 # Module imports and setup
+├── apps/
+│   ├── motion_activated_lights/    # Motion lighting app
+│   └── pyscript_autocomplete/      # IDE development support
+└── modules/
+    ├── light_controls/             # Core lighting functions
+    ├── motion_sensors/             # Manual sensor controls  
+    ├── pyscript_mock/              # IDE type hints
+    └── *.ipynb                     # Jupyter development notebooks
+```
 
 === Core Components
 
-==== Configuration (`config.yaml`)
+==== Motion-Activated Lights App
 
-The main configuration file defines global settings and app-specific parameters:
+Located in link:apps/motion_activated_lights/__init__.py[apps/motion_activated_lights/__init__.py], this app:
 
-[source,yaml]
-----
-allow_all_imports: true      # Enable unrestricted Python imports
-hass_is_global: true        # Global Home Assistant instance access
+- Reads configuration from `pyscript.app_config` 
+- Creates motion detection triggers for each configured sensor
+- Manages hold conditions (door states, guest mode, etc.)
+- Coordinates with light control functions
 
-apps:
-  motion_activated_lights:   # Motion lighting configuration
-    - motion_sensor: binary_sensor.hueentrancesensor_occupancy
-      light: light.entrancelight
-      timer: timer.entrance_timer
-      illuminance: sensor.hueentrancesensor_illuminance
-      hold_light_on_conditions:
-        - entity: binary_sensor.builtinwardrobedoor_contact
-          expected_state: 'on'
-----
+==== Light Control Module
 
-==== Sensor Utilities (`modules/sensor/sensor.py`)
+Located in link:modules/light_controls/light_controls.py[modules/light_controls/light_controls.py], provides:
 
-Core functions for lighting automation:
+- Time-aware configuration (day/night modes)
+- Progressive dimming logic
+- Timer management and extension
+- Ambient light threshold checking
+- Brightness calculation and transitions
 
-* **Brightness Control** - `set_brightness()`, `dim()`
-* **Timer Management** - `set_timer()`, `pause_timer()`, `increase_delay()`
-* **Time-Based Logic** - `get_initial_delay()` (nighttime awareness)
-* **Motion Handling** - `motion_detected()`, `motion_absent()`
-* **Dimming Logic** - `keep_dimming()`, `timer_stopped()`
+==== Motion Sensor Module
 
-==== Development Support
+Located in link:modules/motion_sensors/motion_sensors.py[modules/motion_sensors/motion_sensors.py] for manual controls via input_text entities.
 
-* **Mock System** - Type hints and IDE autocompletion for pyscript builtins
-* **Jupyter Notebooks** - Interactive development and testing environment
-* **Test Modules** - Utilities for automated testing
+== Development
 
-== Usage
+=== Interactive Testing
 
-=== Basic Motion Lighting
+Use the provided Jupyter notebooks:
 
-The motion-activated lighting system automatically:
+- link:modules/hass.ipynb[hass.ipynb] - Home Assistant entity interaction
+- link:modules/test.ipynb[test.ipynb] - Function testing
+- link:modules/pyscript_tutorial.ipynb[pyscript_tutorial.ipynb] - Learning examples
 
-1. **Detects Motion** → Turns on lights at full brightness
-2. **Checks Ambient Light** → Skips activation if already bright enough  
-3. **Starts Timer** → Begins countdown for dimming sequence
-4. **Handles Continued Motion** → Extends timer with increasing delays
-5. **Dims Gradually** → Reduces brightness in steps until off
+=== IDE Support
 
-=== Configuration Examples
+The link:modules/pyscript_mock/[pyscript_mock] module provides type hints and autocompletion for pyscript built-ins, enabling full IDE support during development.
 
-==== Adding a New Motion Sensor
+== Examples
 
-[source,yaml]
-----
-apps:
-  motion_activated_lights:
-    - motion_sensor: binary_sensor.kitchen_motion
-      light: light.kitchen_main
-      timer: timer.kitchen_timer
-      illuminance: sensor.kitchen_light_level
-      hold_light_on_conditions:
-        - entity: binary_sensor.dishwasher_door
-          expected_state: 'on'
-----
+=== Adding a New Room
 
-==== Customizing Timing Parameters
+1. **Create timer entity** in Home Assistant
+2. **Add configuration** to link:config.yaml[config.yaml]:
+```yaml
+- motion_sensor: binary_sensor.bedroom_motion
+  light: light.bedroom_main
+  timer: timer.bedroom_timer  
+  illuminance: sensor.bedroom_light_level
+  hold_light_on_conditions: []
+```
+3. **Restart pyscript** to load new configuration
 
-Modify timing constants in `modules/sensor/sensor.py`:
+=== Customizing Timing
 
-[source,python]
-----
-brightness_step_down = 50          # Brightness reduction per step
-dimming_delay_time = 15            # Seconds between dimming steps (daytime)
-nighttime_dimming_delay = 0        # Seconds between dimming steps (midnight-6am)
-initial_delay = 25                 # Initial timer duration (daytime)
-nighttime_initial_delay = 0        # Initial timer duration (midnight-6am)
-max_delay = 120                    # Maximum timer extension
-----
+Modify the `CONFIG` dictionary in link:modules/light_controls/light_controls.py[modules/light_controls/light_controls.py] to adjust:
 
-=== Development Workflow
+- Initial delays before dimming starts
+- Time between dimming steps  
+- Brightness levels in the sequence
+- Nighttime vs daytime behavior
+- Illuminance threshold for activation
 
-==== Interactive Testing
+=== Debugging Motion Events
 
-1. **Start Jupyter** - Use the provided notebooks for live testing
-2. **Load Mock System** - Import pyscript builtins for IDE support
-3. **Test Functions** - Validate logic before deployment
-4. **Monitor Logs** - Use pyscript logging for debugging
-
-[source,python]
-----
-# Example notebook cell
-from pyscript_mock import *
-import sensor
-
-# Test dimming logic
-old_brightness = 200
-new_brightness = sensor.dim(old_brightness)
-print(f"Dimmed from {old_brightness} to {new_brightness}")
-----
-
-==== Adding New Modules
-
-1. **Create Module** - Add new Python file in `modules/`
-2. **Update Importer** - Modify `importer.py` if needed
-3. **Configure App** - Add configuration to `config.yaml`
-4. **Test Integration** - Verify with Home Assistant
-
-== Advanced Features
-
-=== Conditional Light Persistence
-
-The system supports keeping lights on based on external conditions:
-
-[source,yaml]
-----
-hold_light_on_conditions:
-  - entity: binary_sensor.front_door
-    expected_state: 'on'     # Keep lights on when door is open
-  - entity: input_boolean.guest_mode
-    expected_state: 'on'     # Keep lights on in guest mode
-----
-
-=== Adaptive Timing
-
-The timer system intelligently adjusts delays based on activity and time of day:
-
-* **Initial Motion (Day)** → Standard delay (25 seconds)
-* **Initial Motion (Night)** → No delay (0 seconds, midnight-6am)
-* **Continued Activity** → Progressively longer delays
-* **Maximum Threshold** → Caps at 120 seconds
-* **Paused State** → Maintains current countdown
-
-TIP: The nighttime mode (midnight to 6am) uses zero initial delay for immediate dimming, providing quieter operation during sleep hours.
-
-=== Ambient Light Integration
-
-Smart activation based on environmental conditions:
-
-[source,python]
-----
-if (int(state.get(illuminance)) > 25):
-    log.info(f"Motion ignored - ambient light sufficient")
-    return
-----
-
-== Troubleshooting
-
-=== Common Issues
-
-[cols="1,2,2"]
-|===
-|Issue |Cause |Solution
-
-|Lights not responding to motion
-|Entity ID mismatch
-|Verify entity names in `config.yaml`
-
-|Dimming too aggressive
-|Short delay times
-|Increase `dimming_delay_time` parameter
-
-|IDE autocompletion not working
-|Mock system not loaded
-|Import from `pyscript_mock` module
-
-|Timer not resetting properly
-|Configuration error
-|Check timer entity configuration
-|===
-
-=== Debugging Tips
-
-1. **Enable Logging** - Use `log.info()` for status tracking
-2. **Check Entity States** - Verify sensor and light states
-3. **Monitor Timers** - Watch timer countdown behavior
-4. **Test Conditions** - Validate hold conditions logic
-
-== Requirements
-
-* Home Assistant with pyscript custom component
-* Motion sensors (binary_sensor entities)
-* Controllable lights with brightness support
-* Timer entities for delay management
-* Optional: Illuminance sensors for ambient light detection
-
-== Contributing
-
-When extending this configuration:
-
-1. **Follow Patterns** - Use existing module structure
-2. **Add Documentation** - Include AsciiDoc comments
-3. **Test Thoroughly** - Validate with Jupyter notebooks
-4. **Update Configuration** - Maintain `config.yaml` consistency
-
-== License
-
-This configuration is provided as-is for Home Assistant automation purposes.
+Enable debug logging to trace motion events:
+```python
+# In your app code
+log.info(f"Motion from {motion_sensor} detected")
+log.debug(f"Timer {timer} state: {timer_state}")
+log.debug(f"Hold conditions active: {hold_active}")
+```
